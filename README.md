@@ -1,6 +1,8 @@
 
 # 📜 Time-Locked Token Vesting Contract
 
+![Feature Demo](./img/vesta.png)
+
 This project implements a **token vesting smart contract** using Clarity on the Stacks blockchain. It ensures that employees or partners receive their allocated tokens according to predefined schedules, incentivizing long-term participation. This contract offers features like **cliff periods, vesting intervals, and early exit penalties**.  
 
 ---
