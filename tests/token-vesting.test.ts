@@ -3,6 +3,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 // Mock contract state
 let vestingSchedules = new Map();
 let totalTokensLocked = 0;
+let contractPaused = false;
+
 
 // Constants for errors
 const ERR_NOT_AUTHORIZED = 100;
@@ -115,6 +117,79 @@ function revokeSchedule({ beneficiary, sender }: { beneficiary: string, sender: 
 
   return { success: true, unclaimedTokens };
 }
+
+// Mock function for modify-vesting-schedule
+function modifyVestingSchedule({
+  beneficiary,
+  newVestingLength,
+  newCliffLength,
+  sender
+}: {
+  beneficiary: string,
+  newVestingLength: number,
+  newCliffLength: number,
+  sender: string
+}) {
+  if (sender !== contractOwner) {
+    return { error: ERR_NOT_AUTHORIZED };
+  }
+
+  const schedule = vestingSchedules.get(beneficiary);
+  if (!schedule || !schedule.isActive) {
+    return { error: ERR_NOT_FOUND };
+  }
+
+  if (newVestingLength < newCliffLength) {
+    return { error: ERR_INVALID_SCHEDULE };
+  }
+
+  vestingSchedules.set(beneficiary, {
+    ...schedule,
+    vestingLength: newVestingLength,
+    cliffLength: newCliffLength
+  });
+
+  return { success: true };
+}
+
+// Mock function for get-vesting-status
+function getVestingStatus({ 
+  beneficiary, 
+  currentBlock 
+}: { 
+  beneficiary: string, 
+  currentBlock: number 
+}) {
+  const schedule = vestingSchedules.get(beneficiary);
+  if (!schedule) {
+    return { error: ERR_NOT_FOUND };
+  }
+
+  const cliffEnd = schedule.startBlock + schedule.cliffLength;
+  const vestingEnd = schedule.startBlock + schedule.vestingLength;
+
+  return {
+    success: true,
+    status: {
+      isActive: schedule.isActive,
+      inCliffPeriod: currentBlock < cliffEnd,
+      fullyVested: currentBlock >= vestingEnd,
+      totalClaimed: schedule.tokensClaimed,
+      remainingAmount: schedule.totalAmount - schedule.tokensClaimed
+    }
+  };
+}
+
+// Mock function for toggle-contract-pause
+function toggleContractPause({ sender }: { sender: string }) {
+  if (sender !== contractOwner) {
+    return { error: ERR_NOT_AUTHORIZED };
+  }
+  contractPaused = !contractPaused;
+  return { success: true };
+}
+
+
 // Tests
 describe('Token Vesting Contract', () => {
   it('should allow the owner to create a new vesting schedule', () => {
@@ -198,3 +273,102 @@ describe('Token Vesting Contract', () => {
     expect(result.unclaimedTokens).toBeGreaterThan(0);
   });
 });
+
+
+describe('Token Vesting Contract - Additional Features', () => {
+  it('should allow owner to modify vesting schedule', () => {
+    // First create a schedule
+    createVestingSchedule({
+      beneficiary,
+      totalAmount: 1000,
+      startBlock: 100,
+      cliffLength: 50,
+      vestingLength: 200,
+      vestingInterval: 10,
+      isRevocable: true,
+      sender: contractOwner,
+    });
+
+    const result = modifyVestingSchedule({
+      beneficiary,
+      newVestingLength: 300,
+      newCliffLength: 100,
+      sender: contractOwner
+    });
+
+    expect(result).toEqual({ success: true });
+    
+    const schedule = vestingSchedules.get(beneficiary);
+    expect(schedule.vestingLength).toBe(300);
+    expect(schedule.cliffLength).toBe(100);
+  });
+
+  it('should not allow non-owner to modify vesting schedule', () => {
+    const nonOwner = 'SP2H7J8XT6ZMNQRB7CDYTHXPKDHYH6YHG0YY8T6X';
+    const result = modifyVestingSchedule({
+      beneficiary,
+      newVestingLength: 300,
+      newCliffLength: 100,
+      sender: nonOwner
+    });
+
+    expect(result).toEqual({ error: ERR_NOT_AUTHORIZED });
+  });
+
+  it('should return correct vesting status', () => {
+    createVestingSchedule({
+      beneficiary,
+      totalAmount: 1000,
+      startBlock: 100,
+      cliffLength: 50,
+      vestingLength: 200,
+      vestingInterval: 10,
+      isRevocable: true,
+      sender: contractOwner,
+    });
+
+    const result = getVestingStatus({ 
+      beneficiary, 
+      currentBlock: 150 
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success && result.status) {
+      expect(result.status.isActive).toBe(true);
+      expect(result.status.inCliffPeriod).toBe(false);
+      expect(result.status.fullyVested).toBe(false);
+    } else {
+      fail('Expected result.status to be defined');
+    }
+  });
+
+  it('should allow owner to toggle contract pause', () => {
+    const result = toggleContractPause({ 
+      sender: contractOwner 
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(contractPaused).toBe(true);
+
+    // Toggle back
+    const secondResult = toggleContractPause({ 
+      sender: contractOwner 
+    });
+    
+    expect(secondResult).toEqual({ success: true });
+    expect(contractPaused).toBe(false);
+  });
+
+  it('should not allow non-owner to toggle contract pause', () => {
+    const nonOwner = 'SP2H7J8XT6ZMNQRB7CDYTHXPKDHYH6YHG0YY8T6X';
+    const result = toggleContractPause({ 
+      sender: nonOwner 
+    });
+
+    expect(result).toEqual({ error: ERR_NOT_AUTHORIZED });
+  });
+});
+function fail(arg0: string) {
+  throw new Error('Function not implemented.');
+}
+
