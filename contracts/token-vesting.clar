@@ -174,3 +174,20 @@
             ERR-NOT-FOUND)))
 
 
+(define-read-only (get-vesting-status (beneficiary principal))
+    (match (get-vesting-schedule beneficiary)
+        schedule
+            (let (
+                (current-block block-height)
+                (start-block (get start-block schedule))
+                (cliff-end (+ start-block (get cliff-length schedule)))
+                (vesting-end (+ start-block (get vesting-length schedule)))
+            )
+                (ok {
+                    is-active: (get is-active schedule),
+                    in-cliff-period: (< current-block cliff-end),
+                    fully-vested: (>= current-block vesting-end),
+                    total-claimed: (get tokens-claimed schedule),
+                    remaining-amount: (- (get total-amount schedule) (get tokens-claimed schedule))
+                }))
+        ERR-NOT-FOUND))
