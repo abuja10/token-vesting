@@ -191,3 +191,13 @@
                     remaining-amount: (- (get total-amount schedule) (get tokens-claimed schedule))
                 }))
         ERR-NOT-FOUND))
+
+(define-data-var contract-paused bool false)
+
+(define-public (toggle-contract-pause)
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (var-set contract-paused (not (var-get contract-paused))))))
+
+;; Add to the beginning of create-vesting-schedule and claim-tokens:
+(asserts! (not (var-get contract-paused)) ERR-NOT-AUTHORIZED)
