@@ -201,3 +201,17 @@
 
 ;; Add to the beginning of create-vesting-schedule and claim-tokens:
 (asserts! (not (var-get contract-paused)) ERR-NOT-AUTHORIZED)
+
+
+
+;; Add this constant
+(define-constant ERR-NO-BALANCE (err u105))
+
+;; Add this function
+(define-public (emergency-withdraw (amount uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (asserts! (>= (var-get total-tokens-locked) amount) ERR-NO-BALANCE)
+        (var-set total-tokens-locked (- (var-get total-tokens-locked) amount))
+        ;; Add token transfer logic here
+        (ok amount)))
