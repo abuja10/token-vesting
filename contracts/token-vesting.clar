@@ -228,3 +228,23 @@
     (vesting-interval uint)
     (is-revocable bool))
     (unwrap! (create-vesting-schedule beneficiary amount start-block cliff-length vesting-length vesting-interval is-revocable) false))
+
+
+
+;; Add this constant
+(define-constant ERR-TRANSFER-FAILED (err u106))
+
+;; Add this function
+(define-public (transfer-vesting-schedule 
+    (from principal)
+    (to principal))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (match (get-vesting-schedule from)
+            schedule
+                (begin
+                    (asserts! (get is-active schedule) ERR-NOT-FOUND)
+                    (map-delete vesting-schedules from)
+                    (map-set vesting-schedules to schedule)
+                    (ok true))
+            ERR-NOT-FOUND)))
