@@ -266,3 +266,17 @@
                     { claimed: (get tokens-claimed schedule), 
                       total: (get total-amount schedule) }))
             ERR-NOT-FOUND)))
+
+
+;; Add this function
+(define-read-only (get-unlock-percentage (beneficiary principal))
+    (match (get-vesting-schedule beneficiary)
+        schedule
+            (let (
+                (current-block block-height)
+                (start-block (get start-block schedule))
+                (vesting-length (get vesting-length schedule))
+                (elapsed-blocks (- current-block start-block))
+            )
+                (ok (/ (* elapsed-blocks u100) vesting-length)))
+        ERR-NOT-FOUND))
