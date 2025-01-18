@@ -215,3 +215,16 @@
         (var-set total-tokens-locked (- (var-get total-tokens-locked) amount))
         ;; Add token transfer logic here
         (ok amount)))
+
+
+
+(define-private (create-single-schedule 
+    (beneficiary principal) 
+    (amount uint) 
+    (previous-response bool)
+    (start-block uint)
+    (cliff-length uint)
+    (vesting-length uint)
+    (vesting-interval uint)
+    (is-revocable bool))
+    (unwrap! (create-vesting-schedule beneficiary amount start-block cliff-length vesting-length vesting-interval is-revocable) false))
