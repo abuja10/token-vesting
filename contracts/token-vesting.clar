@@ -151,3 +151,53 @@
 (define-read-only (get-total-locked-tokens)
   (ok (var-get total-tokens-locked))
 )
+
+
+(define-public (modify-vesting-schedule 
+    (beneficiary principal)
+    (new-vesting-length uint)
+    (new-cliff-length uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (match (get-vesting-schedule beneficiary)
+            schedule
+                (begin
+                    (asserts! (get is-active schedule) ERR-NOT-FOUND)
+                    (asserts! (>= new-vesting-length new-cliff-length) ERR-INVALID-SCHEDULE)
+                    (map-set vesting-schedules
+                        beneficiary
+                        (merge schedule {
+                            vesting-length: new-vesting-length,
+                            cliff-length: new-cliff-length
+                        }))
+                    (ok true))
+            ERR-NOT-FOUND)))
+
+
+(define-read-only (get-vesting-status (beneficiary principal))
+    (match (get-vesting-schedule beneficiary)
+        schedule
+            (let (
+                (current-block block-height)
+                (start-block (get start-block schedule))
+                (cliff-end (+ start-block (get cliff-length schedule)))
+                (vesting-end (+ start-block (get vesting-length schedule)))
+            )
+                (ok {
+                    is-active: (get is-active schedule),
+                    in-cliff-period: (< current-block cliff-end),
+                    fully-vested: (>= current-block vesting-end),
+                    total-claimed: (get tokens-claimed schedule),
+                    remaining-amount: (- (get total-amount schedule) (get tokens-claimed schedule))
+                }))
+        ERR-NOT-FOUND))
+
+(define-data-var contract-paused bool false)
+
+(define-public (toggle-contract-pause)
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (var-set contract-paused (not (var-get contract-paused))))))
+
+;; Add to the beginning of create-vesting-schedule and claim-tokens:
+(asserts! (not (var-get contract-paused)) ERR-NOT-AUTHORIZED)
