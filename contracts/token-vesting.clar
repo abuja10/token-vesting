@@ -248,3 +248,21 @@
                     (map-set vesting-schedules to schedule)
                     (ok true))
             ERR-NOT-FOUND)))
+
+
+;; Add this map
+(define-map vesting-snapshots
+    { beneficiary: principal, snapshot-height: uint }
+    { claimed: uint, total: uint })
+
+;; Add this function
+(define-public (create-vesting-snapshot (beneficiary principal))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (match (get-vesting-schedule beneficiary)
+            schedule
+                (ok (map-set vesting-snapshots
+                    { beneficiary: beneficiary, snapshot-height: block-height }
+                    { claimed: (get tokens-claimed schedule), 
+                      total: (get total-amount schedule) }))
+            ERR-NOT-FOUND)))
