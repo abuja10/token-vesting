@@ -147,7 +147,6 @@
   (map-get? vesting-schedules beneficiary)
 )
 
-;; Get total locked tokens
 (define-read-only (get-total-locked-tokens)
   (ok (var-get total-tokens-locked))
 )
@@ -199,15 +198,12 @@
         (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
         (ok (var-set contract-paused (not (var-get contract-paused))))))
 
-;; Add to the beginning of create-vesting-schedule and claim-tokens:
 (asserts! (not (var-get contract-paused)) ERR-NOT-AUTHORIZED)
 
 
 
-;; Add this constant
 (define-constant ERR-NO-BALANCE (err u105))
 
-;; Add this function
 (define-public (emergency-withdraw (amount uint))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
@@ -231,7 +227,6 @@
 
 
 
-;; Add this constant
 (define-constant ERR-TRANSFER-FAILED (err u106))
 
 ;; Add this function
@@ -250,12 +245,10 @@
             ERR-NOT-FOUND)))
 
 
-;; Add this map
 (define-map vesting-snapshots
     { beneficiary: principal, snapshot-height: uint }
     { claimed: uint, total: uint })
 
-;; Add this function
 (define-public (create-vesting-snapshot (beneficiary principal))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
@@ -268,7 +261,6 @@
             ERR-NOT-FOUND)))
 
 
-;; Add this function
 (define-read-only (get-unlock-percentage (beneficiary principal))
     (match (get-vesting-schedule beneficiary)
         schedule
@@ -280,3 +272,109 @@
             )
                 (ok (/ (* elapsed-blocks u100) vesting-length)))
         ERR-NOT-FOUND))
+
+
+
+(define-map whitelisted-beneficiaries principal bool)
+
+(define-public (add-to-whitelist (beneficiary principal))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (map-set whitelisted-beneficiaries beneficiary true))))
+
+(define-public (remove-from-whitelist (beneficiary principal))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (map-delete whitelisted-beneficiaries beneficiary))))
+
+
+(define-map vesting-history
+    { beneficiary: principal, action-height: uint }
+    { action: (string-ascii 20), amount: uint })
+
+(define-public (log-vesting-action (beneficiary principal) (action (string-ascii 20)) (amount uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (map-set vesting-history
+            { beneficiary: beneficiary, action-height: block-height }
+            { action: action, amount: amount }))))
+
+
+(define-map auto-claim-enabled principal bool)
+
+(define-public (toggle-auto-claim)
+    (begin
+        (ok (map-set auto-claim-enabled tx-sender 
+            (not (default-to false (map-get? auto-claim-enabled tx-sender)))))))
+
+(define-public (process-auto-claims (beneficiary principal))
+    (let ((auto-claim (default-to false (map-get? auto-claim-enabled beneficiary))))
+        (if auto-claim
+            (claim-tokens)
+            (ok u0))))
+
+
+(define-map vesting-templates
+    (string-ascii 20)
+    {
+        cliff-length: uint,
+        vesting-length: uint,
+        vesting-interval: uint,
+        is-revocable: bool
+    })
+
+(define-public (create-template 
+    (name (string-ascii 20))
+    (cliff-length uint)
+    (vesting-length uint)
+    (vesting-interval uint)
+    (is-revocable bool))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (map-set vesting-templates name
+            {
+                cliff-length: cliff-length,
+                vesting-length: vesting-length,
+                vesting-interval: vesting-interval,
+                is-revocable: is-revocable
+            }))))
+
+
+
+(define-data-var pause-until uint u0)
+
+(define-public (emergency-pause-with-timelock (duration uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (var-set pause-until (+ block-height duration))
+        (var-set contract-paused true)
+        (ok true)))
+
+(define-public (check-and-unpause)
+    (begin
+        (asserts! (>= block-height (var-get pause-until)) ERR-NOT-AUTHORIZED)
+        (var-set contract-paused false)
+        (ok true)))
+
+
+
+(define-read-only (get-beneficiary-stats (beneficiary principal))
+    (match (get-vesting-schedule beneficiary)
+        schedule
+            (let (
+                (current-block block-height)
+                (start-block (get start-block schedule))
+                (total-amount (get total-amount schedule))
+                (claimed-amount (get tokens-claimed schedule))
+            )
+                (ok {
+                    total-allocation: total-amount,
+                    claimed-amount: claimed-amount,
+                    remaining-amount: (- total-amount claimed-amount),
+                    time-elapsed: (- current-block start-block),
+                    is-active: (get is-active schedule),
+                    percent-vested: (/ (* claimed-amount u100) total-amount)
+                }))
+        ERR-NOT-FOUND))
+
+
