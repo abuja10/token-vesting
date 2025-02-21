@@ -201,3 +201,82 @@
 
 ;; Add to the beginning of create-vesting-schedule and claim-tokens:
 (asserts! (not (var-get contract-paused)) ERR-NOT-AUTHORIZED)
+
+
+
+;; Add this constant
+(define-constant ERR-NO-BALANCE (err u105))
+
+;; Add this function
+(define-public (emergency-withdraw (amount uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (asserts! (>= (var-get total-tokens-locked) amount) ERR-NO-BALANCE)
+        (var-set total-tokens-locked (- (var-get total-tokens-locked) amount))
+        ;; Add token transfer logic here
+        (ok amount)))
+
+
+
+(define-private (create-single-schedule 
+    (beneficiary principal) 
+    (amount uint) 
+    (previous-response bool)
+    (start-block uint)
+    (cliff-length uint)
+    (vesting-length uint)
+    (vesting-interval uint)
+    (is-revocable bool))
+    (unwrap! (create-vesting-schedule beneficiary amount start-block cliff-length vesting-length vesting-interval is-revocable) false))
+
+
+
+;; Add this constant
+(define-constant ERR-TRANSFER-FAILED (err u106))
+
+;; Add this function
+(define-public (transfer-vesting-schedule 
+    (from principal)
+    (to principal))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (match (get-vesting-schedule from)
+            schedule
+                (begin
+                    (asserts! (get is-active schedule) ERR-NOT-FOUND)
+                    (map-delete vesting-schedules from)
+                    (map-set vesting-schedules to schedule)
+                    (ok true))
+            ERR-NOT-FOUND)))
+
+
+;; Add this map
+(define-map vesting-snapshots
+    { beneficiary: principal, snapshot-height: uint }
+    { claimed: uint, total: uint })
+
+;; Add this function
+(define-public (create-vesting-snapshot (beneficiary principal))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (match (get-vesting-schedule beneficiary)
+            schedule
+                (ok (map-set vesting-snapshots
+                    { beneficiary: beneficiary, snapshot-height: block-height }
+                    { claimed: (get tokens-claimed schedule), 
+                      total: (get total-amount schedule) }))
+            ERR-NOT-FOUND)))
+
+
+;; Add this function
+(define-read-only (get-unlock-percentage (beneficiary principal))
+    (match (get-vesting-schedule beneficiary)
+        schedule
+            (let (
+                (current-block block-height)
+                (start-block (get start-block schedule))
+                (vesting-length (get vesting-length schedule))
+                (elapsed-blocks (- current-block start-block))
+            )
+                (ok (/ (* elapsed-blocks u100) vesting-length)))
+        ERR-NOT-FOUND))
