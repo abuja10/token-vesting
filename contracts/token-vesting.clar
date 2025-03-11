@@ -378,3 +378,111 @@
         ERR-NOT-FOUND))
 
 
+;; Add this map and function
+(define-map batch-distribution-queue 
+    uint 
+    (list 100 { beneficiary: principal, amount: uint }))
+
+(define-public (schedule-batch-distribution 
+    (batch-id uint)
+    (beneficiaries (list 100 { beneficiary: principal, amount: uint })))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (map-set batch-distribution-queue batch-id beneficiaries))))
+
+
+(define-map time-locks principal uint)
+
+(define-public (set-time-lock (beneficiary principal) (unlock-height uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (map-set time-locks beneficiary unlock-height))))
+
+(define-public (check-time-lock (beneficiary principal))
+    (let ((unlock-at (default-to u0 (map-get? time-locks beneficiary))))
+        (ok (>= block-height unlock-at))))
+
+
+(define-map vesting-tiers 
+    (string-ascii 10) 
+    {
+        multiplier: uint,
+        min-lock-period: uint,
+        bonus-percentage: uint
+    })
+
+(define-public (create-vesting-tier 
+    (tier-name (string-ascii 10))
+    (multiplier uint)
+    (min-lock-period uint)
+    (bonus-percentage uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (map-set vesting-tiers tier-name {
+            multiplier: multiplier,
+            min-lock-period: min-lock-period,
+            bonus-percentage: bonus-percentage
+        }))))
+
+
+(define-map performance-multipliers principal uint)
+
+(define-public (set-performance-boost 
+    (beneficiary principal)
+    (multiplier uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (asserts! (>= multiplier u100) ERR-INVALID-SCHEDULE)
+        (ok (map-set performance-multipliers beneficiary multiplier))))
+
+
+(define-map vesting-groups 
+    (string-ascii 20) 
+    (list 50 principal))
+
+(define-public (create-vesting-group 
+    (group-name (string-ascii 20))
+    (members (list 50 principal)))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (map-set vesting-groups group-name members))))
+
+
+(define-map milestone-triggers
+    principal
+    (list 10 { milestone: (string-ascii 20), unlock-amount: uint }))
+
+(define-public (set-milestones 
+    (beneficiary principal)
+    (milestones (list 10 { milestone: (string-ascii 20), unlock-amount: uint })))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (map-set milestone-triggers beneficiary milestones))))
+
+
+(define-map vesting-rates principal uint)
+
+(define-public (adjust-vesting-rate 
+    (beneficiary principal)
+    (new-rate uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (asserts! (> new-rate u0) ERR-INVALID-SCHEDULE)
+        (ok (map-set vesting-rates beneficiary new-rate))))
+
+
+(define-map withdrawal-penalties
+    principal
+    { penalty-percentage: uint, min-lock-period: uint })
+
+(define-public (set-withdrawal-penalty 
+    (beneficiary principal)
+    (penalty-percentage uint)
+    (min-lock-period uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (asserts! (<= penalty-percentage u100) ERR-INVALID-SCHEDULE)
+        (ok (map-set withdrawal-penalties beneficiary {
+            penalty-percentage: penalty-percentage,
+            min-lock-period: min-lock-period
+        }))))
