@@ -486,3 +486,253 @@
             penalty-percentage: penalty-percentage,
             min-lock-period: min-lock-period
         }))))
+
+
+(define-constant ERR-EXTENSION-FAILED (err u108))
+
+(define-public (extend-vesting-schedule 
+    (beneficiary principal)
+    (additional-blocks uint))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    (match (get-vesting-schedule beneficiary)
+      schedule
+        (begin
+          (asserts! (get is-active schedule) ERR-NOT-FOUND)
+          (map-set vesting-schedules
+            beneficiary
+            (merge schedule {
+              vesting-length: (+ (get vesting-length schedule) additional-blocks)
+            })
+          )
+          (ok true)
+        )
+      ERR-NOT-FOUND
+    )
+  )
+)
+
+
+(define-map claim-delegates principal principal)
+(define-constant ERR-DELEGATE-NOT-FOUND (err u109))
+
+(define-public (set-claim-delegate (delegate principal))
+  (begin
+    (ok (map-set claim-delegates tx-sender delegate))
+  )
+)
+
+(define-public (remove-claim-delegate)
+  (begin
+    (ok (map-delete claim-delegates tx-sender))
+  )
+)
+
+(define-public (claim-tokens-as-delegate (beneficiary principal))
+  (let (
+    (delegate (default-to tx-sender (map-get? claim-delegates beneficiary)))
+    (claimable (unwrap! (get-claimable-tokens beneficiary) ERR-NOT-FOUND))
+  )
+    (asserts! (is-eq tx-sender delegate) ERR-NOT-AUTHORIZED)
+    (asserts! (> claimable u0) ERR-NO-TOKENS-TO-CLAIM)
+    (match (get-vesting-schedule beneficiary)
+      schedule 
+        (begin
+          (map-set vesting-schedules
+            beneficiary
+            (merge schedule { tokens-claimed: (+ (get tokens-claimed schedule) claimable) })
+          )
+          (var-set total-tokens-locked (- (var-get total-tokens-locked) claimable))
+          ;; Token transfer logic would go here
+          (ok claimable)
+        )
+      ERR-NOT-FOUND
+    )
+  )
+)
+
+
+(define-constant ERR-ACCELERATION-FAILED (err u110))
+
+(define-public (accelerate-vesting 
+    (beneficiary principal)
+    (acceleration-percentage uint))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    (asserts! (<= acceleration-percentage u100) ERR-INVALID-SCHEDULE)
+    (match (get-vesting-schedule beneficiary)
+      schedule
+        (let (
+          (current-length (get vesting-length schedule))
+          (reduction-factor (- u100 acceleration-percentage))
+          (new-length (/ (* current-length reduction-factor) u100))
+        )
+          (asserts! (get is-active schedule) ERR-NOT-FOUND)
+          (asserts! (> new-length u0) ERR-INVALID-SCHEDULE)
+          (map-set vesting-schedules
+            beneficiary
+            (merge schedule {
+              vesting-length: new-length
+            })
+          )
+          (ok true)
+        )
+      ERR-NOT-FOUND
+    )
+  )
+)
+
+(define-map paused-schedules principal uint)
+(define-constant ERR-PAUSE-FAILED (err u111))
+(define-constant ERR-RESUME-FAILED (err u112))
+
+(define-public (pause-vesting-schedule (beneficiary principal))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    (match (get-vesting-schedule beneficiary)
+      schedule
+        (begin
+          (asserts! (get is-active schedule) ERR-NOT-FOUND)
+          (ok (map-set paused-schedules beneficiary block-height))
+        )
+      ERR-NOT-FOUND
+    )
+  )
+)
+
+(define-public (resume-vesting-schedule (beneficiary principal))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    (match (map-get? paused-schedules beneficiary)
+      pause-height
+        (match (get-vesting-schedule beneficiary)
+          schedule
+            (let (
+              (pause-duration (- block-height pause-height))
+              (new-start-block (+ (get start-block schedule) pause-duration))
+            )
+              (map-set vesting-schedules
+                beneficiary
+                (merge schedule {
+                  start-block: new-start-block
+                })
+              )
+              (map-delete paused-schedules beneficiary)
+              (ok true)
+            )
+          ERR-NOT-FOUND
+        )
+      ERR-PAUSE-FAILED
+    )
+  )
+)
+
+
+
+(define-constant ERR-MERGE-FAILED (err u113))
+
+(define-public (merge-vesting-schedules 
+    (from-beneficiary principal)
+    (to-beneficiary principal))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    (match (get-vesting-schedule from-beneficiary)
+      from-schedule
+        (match (get-vesting-schedule to-beneficiary)
+          to-schedule
+            (let (
+              (total-from-amount (- (get total-amount from-schedule) (get tokens-claimed from-schedule)))
+              (new-total-amount (+ (get total-amount to-schedule) total-from-amount))
+            )
+              (asserts! (get is-active from-schedule) ERR-NOT-FOUND)
+              (asserts! (get is-active to-schedule) ERR-NOT-FOUND)
+              
+              (map-set vesting-schedules
+                to-beneficiary
+                (merge to-schedule {
+                  total-amount: new-total-amount
+                })
+              )
+              
+              (map-set vesting-schedules
+                from-beneficiary
+                (merge from-schedule {
+                  is-active: false,
+                  total-amount: (get tokens-claimed from-schedule)
+                })
+              )
+              
+              (ok true)
+            )
+          ERR-NOT-FOUND
+        )
+      ERR-NOT-FOUND
+    )
+  )
+)
+
+
+
+(define-data-var total-beneficiaries uint u0)
+(define-data-var total-claimed-tokens uint u0)
+
+(define-public (update-analytics)
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    (ok true)
+  )
+)
+
+(define-read-only (get-vesting-analytics)
+  (ok {
+    total-locked: (var-get total-tokens-locked),
+    total-claimed: (var-get total-claimed-tokens),
+    total-beneficiaries: (var-get total-beneficiaries),
+    contract-active: (not (var-get contract-paused))
+  })
+)
+
+(define-public (increment-claimed-tokens (amount uint))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    (var-set total-claimed-tokens (+ (var-get total-claimed-tokens) amount))
+    (ok true)
+  )
+)
+
+(define-public (increment-beneficiaries)
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+    (var-set total-beneficiaries (+ (var-get total-beneficiaries) u1))
+    (ok true)
+  )
+)
+
+
+(define-constant ERR-INVALID-AMOUNT (err u114))
+
+(define-public (claim-partial-tokens (amount uint))
+  (let (
+    (beneficiary tx-sender)
+    (claimable (unwrap! (get-claimable-tokens beneficiary) ERR-NOT-FOUND))
+  )
+    (asserts! (> claimable u0) ERR-NO-TOKENS-TO-CLAIM)
+    (asserts! (<= amount claimable) ERR-INVALID-AMOUNT)
+    (match (get-vesting-schedule beneficiary)
+      schedule 
+        (begin
+          (map-set vesting-schedules
+            beneficiary
+            (merge schedule { tokens-claimed: (+ (get tokens-claimed schedule) amount) })
+          )
+          (var-set total-tokens-locked (- (var-get total-tokens-locked) amount))
+          ;; Token transfer logic would go here
+          (ok amount)
+        )
+      ERR-NOT-FOUND
+    )
+  )
+)
+
+
+
