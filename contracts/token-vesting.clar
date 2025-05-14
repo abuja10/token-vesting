@@ -709,30 +709,81 @@
 )
 
 
-(define-constant ERR-INVALID-AMOUNT (err u114))
+(define-map supported-tokens 
+    (string-ascii 32) 
+    { token-contract: principal, enabled: bool })
 
-(define-public (claim-partial-tokens (amount uint))
-  (let (
-    (beneficiary tx-sender)
-    (claimable (unwrap! (get-claimable-tokens beneficiary) ERR-NOT-FOUND))
-  )
-    (asserts! (> claimable u0) ERR-NO-TOKENS-TO-CLAIM)
-    (asserts! (<= amount claimable) ERR-INVALID-AMOUNT)
-    (match (get-vesting-schedule beneficiary)
-      schedule 
-        (begin
-          (map-set vesting-schedules
-            beneficiary
-            (merge schedule { tokens-claimed: (+ (get tokens-claimed schedule) amount) })
-          )
-          (var-set total-tokens-locked (- (var-get total-tokens-locked) amount))
-          ;; Token transfer logic would go here
-          (ok amount)
-        )
-      ERR-NOT-FOUND
-    )
-  )
-)
+(define-map token-vesting-balances
+    { token-id: (string-ascii 32), beneficiary: principal }
+    uint)
+
+(define-public (add-supported-token (token-id (string-ascii 32)) (token-contract principal))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (map-set supported-tokens token-id { 
+            token-contract: token-contract,
+            enabled: true 
+        }))))
+
+(define-public (create-multi-token-vesting
+    (token-id (string-ascii 32))
+    (beneficiary principal)
+    (amount uint)
+    (start-block uint)
+    (cliff-length uint)
+    (vesting-length uint)
+    (vesting-interval uint)
+    (is-revocable bool))
+    (let ((token-info (unwrap! (map-get? supported-tokens token-id) ERR-NOT-FOUND)))
+        (asserts! (get enabled token-info) ERR-NOT-AUTHORIZED)
+        (try! (create-vesting-schedule beneficiary amount start-block cliff-length vesting-length vesting-interval is-revocable))
+        (ok (map-set token-vesting-balances 
+            { token-id: token-id, beneficiary: beneficiary }
+            amount))))
 
 
 
+(define-map admin-roles
+    principal
+    { role: (string-ascii 10), active: bool })
+
+(define-map schedule-templates
+    (string-ascii 32)
+    {
+        cliff-blocks: uint,
+        vesting-blocks: uint,
+        interval-blocks: uint,
+        role-required: (string-ascii 10)
+    })
+
+(define-public (create-schedule-template
+    (template-id (string-ascii 32))
+    (cliff-blocks uint)
+    (vesting-blocks uint)
+    (interval-blocks uint)
+    (role-required (string-ascii 10)))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (ok (map-set schedule-templates template-id {
+            cliff-blocks: cliff-blocks,
+            vesting-blocks: vesting-blocks,
+            interval-blocks: interval-blocks,
+            role-required: role-required
+        }))))
+
+(define-public (apply-template-schedule
+    (template-id (string-ascii 32))
+    (beneficiary principal)
+    (amount uint))
+    (let (
+        (template (unwrap! (map-get? schedule-templates template-id) ERR-NOT-FOUND))
+        (admin-role (unwrap! (map-get? admin-roles tx-sender) ERR-NOT-AUTHORIZED)))
+        (asserts! (is-eq (get role admin-role) (get role-required template)) ERR-NOT-AUTHORIZED)
+        (create-vesting-schedule 
+            beneficiary 
+            amount 
+            block-height
+            (get cliff-blocks template)
+            (get vesting-blocks template)
+            (get interval-blocks template)
+            true)))
