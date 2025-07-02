@@ -5,6 +5,16 @@ authors = []
 telemetry = true
 cache_dir = '.\.cache'
 requirements = []
+[contracts.performance-decay]
+path = 'contracts/performance-decay.clar'
+clarity_version = 3
+epoch = 3.1
+
+[contracts.performance-vesting]
+path = 'contracts/performance-vesting.clar'
+clarity_version = 3
+epoch = 3.1
+
 [contracts.token-vesting]
 path = 'contracts/token-vesting.clar'
 clarity_version = 2
