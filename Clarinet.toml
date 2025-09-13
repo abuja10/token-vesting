@@ -24,6 +24,11 @@ epoch = 2.5
 path = 'contracts/contribution-rewards.clar'
 clarity_version = 3
 epoch = 3.1
+
+[contracts.vesting-portfolio-dashboard]
+path = 'contracts/vesting-portfolio-dashboard.clar'
+clarity_version = 3
+epoch = 3.1
 [repl.analysis]
 passes = ['check_checker']
 
