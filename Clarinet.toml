@@ -5,10 +5,30 @@ authors = []
 telemetry = true
 cache_dir = '.\.cache'
 requirements = []
+[contracts.performance-decay]
+path = 'contracts/performance-decay.clar'
+clarity_version = 3
+epoch = 3.1
+
+[contracts.performance-vesting]
+path = 'contracts/performance-vesting.clar'
+clarity_version = 3
+epoch = 3.1
+
 [contracts.token-vesting]
 path = 'contracts/token-vesting.clar'
 clarity_version = 2
 epoch = 2.5
+
+[contracts.contribution-rewards]
+path = 'contracts/contribution-rewards.clar'
+clarity_version = 3
+epoch = 3.1
+
+[contracts.vesting-portfolio-dashboard]
+path = 'contracts/vesting-portfolio-dashboard.clar'
+clarity_version = 3
+epoch = 3.1
 [repl.analysis]
 passes = ['check_checker']
 
